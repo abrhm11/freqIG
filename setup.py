@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="freqig",
-    version="0.1.5",
+    version="0.1.7",
     packages=find_packages(),
     install_requires=[
         'torch>=2.0.0',
@@ -11,7 +11,7 @@ setup(
     ],
     author="Paul Gräve",
     description="Frequency-domain model explanation (IG) package",
-    long_description=open('README.md').read(),
+    long_description=open('README.md', encoding='utf-8').read(),
     long_description_content_type='text/markdown',
     url="https://gitlab.com/paulabraham.graeve/flex",
     classifiers=[
