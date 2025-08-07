@@ -1,12 +1,17 @@
 # freqIG
 
+![Attribution Visualization](https://raw.githubusercontent.com/abrhm11/freqIG/main/freqIG_attributions.png)
+
+*This is a basic example of this method, the code is given below in 'Examples'.*
+
+
 ## Overview
 
 This repository contains the implementation of **freqIG**, a method based on the principle of **FLEX (Frequency Layer Explanation)** [1], designed to explain the predictions of deep neural networks (DNNs) for time-series classification tasks. freqIG combines **Integrated Gradients (IG)** with a frequency-domain transform (via the **Real Fast Fourier Transform (RFFT)**) to provide frequency-based attribution scores.
 
 The method is generally useful for understanding how different frequency components of a time-series input influence the predictions of a DNN, thus enhancing model interpretability.
 
-*For details on the general concept, see [1]: "Using EEG Frequency Attributions to Explain the Classifications of a Deep Neural Network for Sleep Staging" (Paul Gräve et al.).*
+*For details and an application of this method, see [1]: "Using EEG Frequency Attributions to Explain the Classifications of a Deep Neural Network for Sleep Staging" (Paul Gräve et al.). ~ soon to be published, if not already available*
 
 ---
 
@@ -19,9 +24,16 @@ The method is generally useful for understanding how different frequency compone
 ---
 
 ## Definition (FLEX principle)
-Let F be our model (DNN) and x be our input (time-series data). Then with $\bar{F} = F \circ iRFFT$ and $\bar{x} = RFFT(x)$ we get  
-$$FLEX_i(F,x) = IG_i(\bar{F},\bar{x})$$,  
-where $FLEX(F,x) = (FLEX_1(F,x), ..., FLEX_n(F,x))$ with $x \in \mathbb{R}^n$.
+Let F be our model (DNN) and x be our input (time-series data). Then with  
+`F̄ = F ∘ iRFFT` and `x̄ = RFFT(x)` we get
+
+$$
+FLEXᵢ(F, x) = IGᵢ(F̄, x̄)
+$$
+
+where  
+`FLEX(F, x) = (FLEX₁(F, x), ..., FLEXₙ(F, x))` with `x ∈ ℝⁿ`.
+
 
 ---
 
@@ -33,11 +45,29 @@ where $FLEX(F,x) = (FLEX_1(F,x), ..., FLEX_n(F,x))$ with $x \in \mathbb{R}^n$.
   - `numpy`
   - `torch`
   - `captum`
+- Optional libraries (for model conversion features):
+  - `onnx`
+  - `tf2onnx`
+  - `onnx2pytorch`
 
-### Install Dependencies
-You can install the required Python libraries using `pip`:
+Install the base package with required dependencies:
+
 ```bash
-pip install numpy torch captum
+pip install freqig
+```
+
+To enable model conversion support (e.g., from ONNX or Keras), install with the optional extras:
+
+```bash
+pip install freqig[convert]
+```
+
+You can also install only specific optional dependencies if needed:
+
+```bash
+pip install freqig[onnx2pytorch]
+pip install freqig[onnx]
+pip install freqig[tf2onnx]
 ```
 
 ---
@@ -124,13 +154,13 @@ torch.manual_seed(42)
 # Define sampling rate in Hz and signal length:
 fs = 128                # Sampling frequency, e.g. 128 Hz
 n_samples = 100
-n_features = 64         # Number of samples per time series
+n_features = 256         # Number of samples per time series
 
 # Frequency axis in Hz:
 freqs = np.fft.rfftfreq(n_features, d=1/fs)
 
 # --- Select target frequency in Hz ---
-possible_freqs_hz = np.arange(1, min(51, int(fs // 2)))  # Valid Hz, up to Nyquist
+possible_freqs_hz = np.arange(1, min(10, int(fs // 2)))  # Valid Hz, up to Nyquist
 target_freq_hz = np.random.choice(possible_freqs_hz)
 # Find closest matching index on the FFT axis:
 target_freq_idx = np.argmin(np.abs(freqs - target_freq_hz))
@@ -144,10 +174,10 @@ t = np.arange(n_features) / fs  # Time axis in seconds
 
 for i in range(n_samples):
     label = np.random.randint(0, 2)
-    base = 20 * np.random.randn(n_features)
+    base = 5 * np.random.randn(n_features)
     if label == 1:
         phase = np.random.uniform(0, 2*np.pi)
-        amplitude = np.random.uniform(0.5, 30)
+        amplitude = np.random.uniform(10, 30)
         base += amplitude * np.sin(2 * np.pi * target_freq * t + phase)
     X.append(base)
     y.append(label)
@@ -223,30 +253,25 @@ attr_dict = {freq: score for freq, score in zip(freq_axis, attr_scores)}
 
 # -----------------------------------------------------------------------------
 # 2. Plot one example from class 0 and one from class 1
-fig, axs = plt.subplots(3, 1, figsize=(8, 8))
+fig, axs = plt.subplots(2, 1, figsize=(8, 4), gridspec_kw={'height_ratios': [1, 1.8]})
 
 ex0 = np.where(y == 0)[0][0]
 ex1 = np.where(y == 1)[0][0]
 
-axs[0].plot(np.arange(n_features), X[ex0], label="Class 0 (no sine wave)")
-axs[0].plot(np.arange(n_features), X[ex1], label="Class 1 (sine wave)")
+# Plot 1 – Time series example
+axs[0].plot(np.arange(n_features), X[ex0], label="Noise")
+axs[0].plot(np.arange(n_features), X[ex1], label=f"Sine Wave [{target_freq_hz} Hz] + Noise")
 axs[0].set_title("Example input time series")
 axs[0].set_xlabel("Time step")
-axs[0].set_ylabel("Signal value")
-axs[0].legend()
+axs[0].set_ylabel("Amplitude")
+axs[0].legend(loc='upper right')
 
-axs[1].bar(freqs, attr_scores)
+# Plot 2 – Frequency attributions
+bar_width = 0.8
+axs[1].bar(freqs, attr_scores, width=bar_width, color='tab:orange')
 axs[1].set_xlabel("Frequency [Hz]")
 axs[1].set_ylabel("Attribution [AU]")
-axs[1].set_title("Frequency attributions for a random 'Class 1' sample")
-
-# Optional: Logits histogram (for model output debugging; can also plot score distributions)
-axs[2].hist(logits.detach().cpu().numpy()[y==0,1], alpha=0.5, label="Class 0, target class logit")
-axs[2].hist(logits.detach().cpu().numpy()[y==1,1], alpha=0.5, label="Class 1, target class logit")
-axs[2].set_title("Model output for target class (logits)")
-axs[2].set_xlabel("Logit (raw value)")
-axs[2].set_ylabel("Count")
-axs[2].legend()
+axs[1].set_title("Frequency attributions for a random 'Sine Wave' sample")
 
 plt.tight_layout()
 plt.savefig("freqIG_attributions.png")

@@ -3,43 +3,59 @@ import onnx
 import numpy as np
 from typing import Union, Optional, Any
 from captum.attr import IntegratedGradients
+# optional imports
 try:
     import tensorflow as tf
     _HAS_TF = True
 except ImportError:
     _HAS_TF = False
-import tf2onnx
-from onnx2pytorch import ConvertModel
+
+try:
+    import tf2onnx
+    _HAS_TF2ONNX = True
+except ImportError:
+    _HAS_TF2ONNX = False
+
+try:
+    from onnx2pytorch import ConvertModel
+    _HAS_ONNX2PYTORCH = True
+except ImportError:
+    _HAS_ONNX2PYTORCH = False
 
 
 def to_pytorch_model(model: Any) -> torch.nn.Module:
     """
-    Convert Keras or ONNX models to a PyTorch nn.Module.
-    If `model` is already nn.Module, wird es direkt zurückgegeben.
+    Konvertiert Keras- oder ONNX-Modelle zu einem PyTorch nn.Module.
+    Falls das Modell bereits ein nn.Module ist, wird es direkt zurückgegeben.
     """
-    # 1) Already PyTorch?
+
+    # 1) PyTorch-Modell
     if isinstance(model, torch.nn.Module):
         return model
 
-    # 2) Keras → ONNX → PyTorch (is more robust than direct conversion)
-    if _HAS_TF and isinstance(model, tf.keras.Model):
-        # Erstelle ONNX-Model aus Keras
+    # 2) Keras → ONNX → PyTorch
+    if _HAS_TF and _HAS_TF2ONNX and _HAS_ONNX2PYTORCH and isinstance(model, tf.keras.Model):
         spec = (tf.TensorSpec(model.inputs[0].shape, tf.float32, name="input"),)
         onnx_model, _ = tf2onnx.convert.from_keras(model,
                                                    input_signature=spec,
                                                    opset=13)
         return ConvertModel(onnx_model)
 
-    # 3) ONNX ModelProto
+    # 3) ONNX ModelProto → PyTorch
     if isinstance(model, onnx.ModelProto):
+        if not _HAS_ONNX2PYTORCH:
+            raise ImportError("onnx2pytorch ist nicht verfügbar.")
         return ConvertModel(model)
 
-    # 4) Path to .onnx-Datei
+    # 4) ONNX-filepath → load ONNX → PyTorch
     if isinstance(model, str) and model.lower().endswith(".onnx"):
+        if not _HAS_ONNX2PYTORCH:
+            raise ImportError("onnx2pytorch ist nicht verfügbar.")
         onnx_model = onnx.load(model)
         return ConvertModel(onnx_model)
 
-    raise ValueError(f"Unsupported model type: {type(model)}")
+    raise ValueError(f"Nicht unterstützter Modelltyp: {type(model)}")
+
 
 def polar_to_complex(r: torch.Tensor, theta: torch.Tensor) -> torch.Tensor:
     if r.dtype != theta.dtype:
